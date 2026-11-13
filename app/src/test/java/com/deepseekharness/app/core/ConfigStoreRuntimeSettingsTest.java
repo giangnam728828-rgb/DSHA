@@ -12,17 +12,17 @@ public class ConfigStoreRuntimeSettingsTest {
   public void missingSettingsUseTheSingleConfigStoreDefaults() {
     var snapshot = ConfigStore.runtimeSettingsFrom(Map.of());
     assertEquals("auto", snapshot.dnsMode);
-    assertFalse(snapshot.proroot);
+    assertTrue(snapshot.proroot);
     assertTrue(snapshot.staticLoader);
     assertFalse(snapshot.disableProotSeccomp);
   }
 
   @Test
-  public void unselectedColdInstallKeepsTheStableProotDefault() {
+  public void unselectedColdInstallUsesProrootDefault() {
     assertFalse(ConfigStore.preferFastColdModeFrom(Map.of()));
     var values = Map.of("dns_mode", "ipv4", "ui_language", "en");
     assertFalse(ConfigStore.preferFastColdModeFrom(values));
-    assertFalse(ConfigStore.runtimeSettingsFrom(values).proroot);
+    assertTrue(ConfigStore.runtimeSettingsFrom(values).proroot);
   }
 
   @Test

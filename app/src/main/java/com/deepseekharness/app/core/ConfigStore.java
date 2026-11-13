@@ -443,16 +443,20 @@ public class ConfigStore {
     prefs.edit().putBoolean(Constants.KEY_GECKO_CORE, v).apply();
   }
 
-  /** 默认稳定的 proot；用户可选择 proroot。 */
+  /**
+   * 默认 proroot：LD_PRELOAD 零 ptrace，实测把「注册插件」这类大量文件系统调用的阶段显著缩短。
+   * 若所选 proroot 在鉴权前明确退出且无插件故障，按 {@code WebRuntimeFallback} 自动回退一次 proot，
+   * 不会把 proot 成功报告成 proroot 成功。用户仍可在设置里显式选回 proot。
+   */
   public boolean isProroot() {
-    return "proroot".equals(text(Constants.KEY_CONTAINER_RUNTIME, "proot"));
+    return "proroot".equals(text(Constants.KEY_CONTAINER_RUNTIME, "proroot"));
   }
 
   public void setProroot(boolean v) {
     prefs.edit().putString(Constants.KEY_CONTAINER_RUNTIME, v ? "proroot" : "proot").apply();
   }
 
-  /** 首次安装同样默认稳定 proot；只由用户显式选择启用 proroot。 */
+  /** 首次安装同样默认 proroot；用户仍可在设置中选择 proot 以获得最保守的兼容性。 */
   public boolean preferFastColdMode() {
     return preferFastColdModeFrom(prefs.getAll());
   }
@@ -549,7 +553,7 @@ public class ConfigStore {
         "proroot"
             .equals(
                 com.deepseekharness.app.util.PreferenceValue.text(
-                    values.get(Constants.KEY_CONTAINER_RUNTIME), "proot")),
+                    values.get(Constants.KEY_CONTAINER_RUNTIME), "proroot")),
         com.deepseekharness.app.util.PreferenceValue.flag(
             values.get("proroot_static_loader"), true),
         com.deepseekharness.app.util.PreferenceValue.flag(
