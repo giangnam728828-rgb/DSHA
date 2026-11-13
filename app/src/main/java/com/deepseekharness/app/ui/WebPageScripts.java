@@ -32,7 +32,9 @@ public final class WebPageScripts {
         + "\n"
         + read(context, "bridge-token-compat.cjs")
         + "\n"
-        + read(context, "web-integration/startup.js");
+        + read(context, "web-integration/startup.js")
+        + "\n"
+        + chatPerformance();
   }
 
   public static String compatibility(
@@ -166,5 +168,31 @@ public final class WebPageScripts {
       throw new IllegalStateException(impossible);
     }
     return request;
+  }
+
+  /**
+   * 长对话渲染优化：消息流每个轮次允许浏览器跳过屏幕外的布局与绘制。
+   *
+   * <p>选择器只依赖 {@code data-chat-flow}——它是聊天网页自己写死的稳定属性，不像 CSS Modules
+   * 类名会随构建变成哈希。最后一条不加：它可能正在流式输出，高度持续变化，
+   * 跳过渲染会造成跳动。
+   *
+   * <p>{@code contain-intrinsic-size} 的 {@code auto} 关键字让浏览器记住上次实测高度，
+   * 滚动条长度不会跳到估算值。整体只是渲染层提示，不改任何数据或交互逻辑；
+   * 属性缺失时这条规则自然不生效，不会影响其他页面。
+   */
+  public static String chatPerformance() {
+    return "(function(){"
+        + "if(window.__DSHA_CHAT_PERF__)return;window.__DSHA_CHAT_PERF__=true;"
+        + "var css='[data-chat-flow]>*:not(:last-child){content-visibility:auto;"
+        + "contain-intrinsic-size:auto 200px;}';"
+        + "function inject(){"
+        + "if(document.getElementById('dsha-chat-perf'))return;"
+        + "var head=document.head||document.documentElement;if(!head)return;"
+        + "var style=document.createElement('style');"
+        + "style.id='dsha-chat-perf';style.textContent=css;head.appendChild(style);}"
+        + "if(document.head)inject();"
+        + "else document.addEventListener('DOMContentLoaded',inject,{once:true});"
+        + "})();";
   }
 }
