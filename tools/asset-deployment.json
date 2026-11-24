@@ -37,19 +37,20 @@
     "dsha-layout-recovery.js",
     "dsha-plugin.sh",
     "dsha-runtime-env.sh",
+    "external-tool-proof.json",
     "file-deliverables-patch.json",
     "file-image-actions-patch.json",
     "file-upload-binary-client-patch.json",
     "file-upload-capacity-patch.json",
     "first-connect-indicator-patch.json",
     "frontend-static-cache-patch.json",
+    "gh-proxy.mjs",
+    "gh-wrapper.sh",
     "guard-bash-patch.json",
     "guard-editor-patch.json",
     "guard-fs-patch.json",
     "guard-tools-patch.json",
     "guard-tools-pipeline-patch.json",
-    "gh-proxy.mjs",
-    "gh-wrapper.sh",
     "install-basic-tools.sh",
     "install-ubuntu-tools.sh",
     "lan-settings-upstream-contract.json",
@@ -62,6 +63,8 @@
     "managed-package-proofs.json",
     "managed-runtime-inputs.json",
     "materialize-cas-links.py",
+    "mcp-image-base64-patch.json",
+    "mcp-version-negotiation-patch.json",
     "native-consent.cjs",
     "net-epoch.cjs",
     "office-fonts-patch.json",
@@ -124,8 +127,6 @@
     "session-interaction-patch.json",
     "sidebar-layout-recovery-patch.json",
     "startup-mcp-timing-patch.json",
-    "mcp-image-base64-patch.json",
-    "mcp-version-negotiation-patch.json",
     "startup-observer.cjs",
     "subagent-navigation-patch.json",
     "tool-block-identity-patch.json",
@@ -137,6 +138,7 @@
     "ubuntu-tools.bin",
     "ubuntu-tools.layout",
     "ubuntu-tools.manifest.json",
+    "user-only-skill-approval-patch.json",
     "web-fetch-http-surrogate-patch.json",
     "web-fetch-output-surrogate-patch.json",
     "web-integration/language.js",
@@ -144,8 +146,7 @@
     "web-integration/session-interaction.js",
     "welcome-notice-patch.json",
     "workspace-directory-policy-patch.json",
-    "user-only-skill-approval-patch.json",
-    "external-tool-proof.json"
+    "zcode-install.sh"
   ],
   "packagedTrees": [
     "app-integration",
@@ -301,6 +302,14 @@
         "licenses/gson-LICENSE.txt",
         "licenses/proot-COPYING.txt",
         "licenses/snakeyaml-LICENSE.txt"
+      ]
+    },
+    {
+      "source": "app/src/main/java/com/deepseekharness/app/ui/ZcodeRuntime.java",
+      "method": "readAsset",
+      "contract": "ZCode guest installer is read from the APK and executed inside the Ubuntu guest; it is not a managed runtime input.",
+      "assets": [
+        "zcode-install.sh"
       ]
     }
   ],
