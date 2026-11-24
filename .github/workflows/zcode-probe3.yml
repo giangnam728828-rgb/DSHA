@@ -1,0 +1,83 @@
+name: zcode-runtime-probe3
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载并解包
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          echo extracted
+
+      - name: glm 元数据与配置
+        run: |
+          R=/tmp/squashfs-root/resources
+          echo "=== node-bundle-meta ==="
+          cat "$R/glm/.node-bundle-meta.json" 2>/dev/null | head -30
+          echo "=== glm 顶层 ==="
+          ls -la "$R/glm" | head -20
+          echo "=== default.json ==="
+          head -60 "$R/config/default.json" 2>/dev/null
+          echo "=== provider ==="
+          head -40 "$R/config/provider/zcode-builtin.json" 2>/dev/null
+          true
+
+      - name: zcode.cjs 帮助
+        run: |
+          set -uo pipefail
+          cd /tmp/squashfs-root/resources
+          echo "=== --help ==="
+          timeout 40 node glm/zcode.cjs --help 2>&1 | head -60
+          echo "=== 退出码 $? ==="
+          true
+
+      - name: 起 Web 服务
+        run: |
+          set -uo pipefail
+          cd /tmp/squashfs-root/resources
+          node glm/zcode.cjs --web --port 3030 --no-open > /tmp/z.log 2>&1 &
+          echo $! > /tmp/z.pid
+          sleep 25
+          echo "=== HTTP ==="
+          curl -sS -m 8 -o /tmp/i.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+          echo "=== 首屏 ==="
+          head -c 500 /tmp/i.html 2>/dev/null || true
+          echo
+          echo "=== 日志 ==="
+          head -60 /tmp/z.log 2>/dev/null || true
+
+      - name: 备用启动方式
+        if: always()
+        run: |
+          set -uo pipefail
+          [ -f /tmp/z.pid ] && kill "$(cat /tmp/z.pid)" 2>/dev/null || true
+          cd /tmp/squashfs-root/resources
+          for arg in "" "--profile web" "--server"; do
+            echo "=== 尝试参数 [$arg] ==="
+            timeout 20 node glm/zcode.cjs $arg > /tmp/t.log 2>&1 &
+            P=$!
+            sleep 8
+            curl -sS -m 5 -o /dev/null -w "HTTP:%{http_code}\n" http://127.0.0.1:3030/ || true
+            kill $P 2>/dev/null || true
+            head -12 /tmp/t.log 2>/dev/null || true
+          done
+          true
+
+      - name: 工具架构
+        if: always()
+        run: |
+          R=/tmp/squashfs-root/resources
+          file "$R/tools/ripgrep/rg" "$R/tools/bfs/bfs" 2>/dev/null || true
+          du -sh "$R/glm" "$R/tools" "$R/config" 2>/dev/null || true
