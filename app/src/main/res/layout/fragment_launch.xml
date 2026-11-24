@@ -39,6 +39,10 @@
               <com.google.android.material.button.MaterialButton android:id="@+id/launch_stop" app:icon="@drawable/ic_launch_stop" style="@style/ShellLaunchQuiet" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:text="@string/ui2_stop" />
             </LinearLayout>
           </LinearLayout>
+
+          <!-- 第二个工作台：与 DeepSeek 并行，走独立的 ZCode 本地 Web，不影响上面的启动目标。 -->
+          <com.google.android.material.button.MaterialButton android:id="@+id/launch_zcode" app:icon="@drawable/ic_terminal" style="@style/ShellLaunchQuiet" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="@string/zcode_entry" />
+          <TextView android:id="@+id/launch_zcode_hint" style="@style/ShellLaunchMeta" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/zcode_entry_hint" />
         </LinearLayout>
 
         <!-- 原型 A 插图：旋转外环 + 品牌内核；纯装饰，不参与无障碍。 -->
