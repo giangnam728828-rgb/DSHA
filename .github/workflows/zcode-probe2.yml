@@ -1,0 +1,93 @@
+name: zcode-runtime-probe2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 环境
+        run: uname -m; nproc; free -h | head -2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          ls -lh /tmp/z.AppImage
+
+      - name: 解包
+        run: |
+          set -euo pipefail
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          echo ok
+
+      - name: 结构侦察
+        run: |
+          R=/tmp/squashfs-root/resources
+          echo "=== resources 顶层 ==="; ls -la "$R"
+          echo "=== glm 大小 ==="; du -sh "$R/glm" 2>/dev/null || true
+          echo "=== glm 两层 ==="; find "$R/glm" -maxdepth 2 2>/dev/null | head -60
+          echo "=== config ==="; find "$R/config" -maxdepth 2 2>/dev/null | head -30
+          echo "=== tools ==="; find "$R/tools" -maxdepth 2 2>/dev/null | head -30
+          echo "=== unpacked ==="; find "$R/app.asar.unpacked" -maxdepth 3 2>/dev/null | head -40
+          echo "=== 原生 node 模块 ==="; find "$R" -name '*.node' 2>/dev/null | head -20
+          true
+
+      - name: asar 清单
+        run: |
+          set -uo pipefail
+          npm i -g @electron/asar > /dev/null 2>&1 || true
+          cd /tmp/squashfs-root/resources
+          asar list app.asar > /tmp/list.txt 2>/tmp/list.err || true
+          echo "行数: $(wc -l < /tmp/list.txt)"
+          echo "=== 顶层目录 ==="
+          awk -F/ 'NF==2' /tmp/list.txt | head -40
+          echo "=== dist 相关 ==="
+          grep -E '^/dist/|package.json$' /tmp/list.txt | head -40
+          echo "=== 错误 ==="; head -5 /tmp/list.err || true
+
+      - name: Electron 当 Node 用
+        run: |
+          set -uo pipefail
+          cd /tmp/squashfs-root
+          echo "=== Electron 内置 Node 版本 ==="
+          ELECTRON_RUN_AS_NODE=1 ./zcode -e "console.log(process.version)" 2>&1 | head -5 || true
+
+      - name: 试跑 server-cli
+        run: |
+          set -uo pipefail
+          R=/tmp/squashfs-root/resources
+          cd "$R"
+          echo "=== 在 asar 里找 server-cli ==="
+          grep -E 'server-cli' /tmp/list.txt | head -10 || true
+          # 只提取可能的入口文件，避免整包 340MB 解压
+          for f in dist/server-cli.js package.json dist/main.js out/main/index.js; do
+            asar extract-file app.asar "$f" 2>/dev/null && echo "extracted $f" || true
+          done
+          ls -la dist 2>/dev/null | head -20 || true
+          echo "=== package.json ==="
+          head -40 package.json 2>/dev/null || true
+          echo "=== 尝试启动 ==="
+          if [ -f dist/server-cli.js ]; then
+            ELECTRON_RUN_AS_NODE=1 /tmp/squashfs-root/zcode dist/server-cli.js --web --port 3030 --no-open > /tmp/a.log 2>&1 &
+            sleep 20
+            curl -sS -m 8 -o /tmp/a.html -w "A HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+            head -30 /tmp/a.log || true
+          fi
+
+      - name: glm 里找 node
+        if: always()
+        run: |
+          R=/tmp/squashfs-root/resources
+          echo "=== glm 内的可执行文件 ==="
+          find "$R/glm" -maxdepth 4 -type f \( -name 'node' -o -name '*.mjs' -o -name '*.cjs' \) 2>/dev/null | head -30
+          echo "=== glm 顶层清单 ==="
+          ls -la "$R/glm" 2>/dev/null | head -30
