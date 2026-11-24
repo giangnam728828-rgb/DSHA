@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "identity": "upstream",
-  "packageName": "dsh.android.client",
+  "packageName": "io.github.giangnam728828.dshazc",
   "certificateSha256": "320ba94ffd6acbdd2bc21a852c4b69c0f3671b8c35be27e2b9a80c7153c49f4a",
   "schemes": [
     "v1",
     "v2",
     "v3"
   ],
-  "appName": "DSHA",
+  "appName": "DSHA ZCode",
   "keyAlias": "androiddebugkey",
   "testSuffix": ".SunsetRNE",
   "devSuffix": ".SunsetDev",
