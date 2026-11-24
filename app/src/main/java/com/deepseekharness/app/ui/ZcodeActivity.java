@@ -128,10 +128,10 @@ public final class ZcodeActivity extends Activity {
       status.setText(UiText.choose("正在检查 ZCode 环境…", "Checking ZCode environment…"));
     });
     new Thread(() -> {
-      String log = ZcodeRuntime.ensureReady(this, stage -> status(stage));
+      String log = ZcodeRuntime.prepare(this, stage -> status(stage));
       if (!isFinishing() && !isDestroyed()) {
         if (log == null) {
-          status(UiText.choose("正在打开 ZCode 终端…", "Opening ZCode terminal…"));
+          status(UiText.choose("正在打开 ZCode…", "Opening ZCode…"));
           if (needsEnvironment()) {
             fail(UiText.choose(
                 "DSH 的运行环境还没就绪。请回到首页先启动一次 DeepSeek，再打开 ZCode。",
@@ -139,11 +139,8 @@ public final class ZcodeActivity extends Activity {
             working = false;
             return;
           }
-          Intent terminal = new Intent(this, TerminalActivity.class);
-          terminal.putExtra(TerminalActivity.EXTRA_GUEST_COMMAND,
-              new String[] {"bash", "-lc", "cd " + ZcodeRuntime.HOME + " && exec node glm/zcode.cjs"});
-          terminal.putExtra(TerminalActivity.EXTRA_GUEST_TITLE, "ZCode");
-          startActivity(terminal);
+          startActivity(WebPreviewActivity.intent(
+              this, "http://127.0.0.1:" + ZcodeRuntime.PORT + "/", null));
           finish();
         } else {
           fail(log);
