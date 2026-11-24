@@ -1,0 +1,84 @@
+name: zcode-runtime-probe4
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载并解包
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          echo extracted
+
+      - name: 补齐 provider 配置
+        run: |
+          set -uo pipefail
+          R=/tmp/squashfs-root/resources
+          mkdir -p "$R/glm/provider"
+          cp "$R/config/provider/"*.json "$R/glm/provider/" 2>/dev/null || true
+          ls -la "$R/glm/provider"
+          cd "$R"
+          echo "=== doctor ==="
+          timeout 60 node glm/zcode.cjs doctor 2>&1 | head -40 || true
+          echo "=== version ==="
+          timeout 30 node glm/zcode.cjs version 2>&1 | head -5 || true
+
+      - name: 解 asar
+        run: |
+          set -uo pipefail
+          cd /tmp/squashfs-root/resources
+          npm i -g @electron/asar > /tmp/npm.log 2>&1 || cat /tmp/npm.log | tail -10
+          which asar || true
+          asar extract app.asar /tmp/app 2>&1 | tail -5 || true
+          echo "=== app 顶层 ==="
+          ls -la /tmp/app | head -30
+          echo "=== dist ==="
+          ls -la /tmp/app/dist 2>/dev/null | head -40
+          echo "=== package.json ==="
+          head -50 /tmp/app/package.json 2>/dev/null
+
+      - name: server-cli 帮助
+        run: |
+          set -uo pipefail
+          cd /tmp/app
+          for f in dist/server-cli.js dist/server.js dist/index.js out/main/index.js; do
+            if [ -f "$f" ]; then echo "=== $f ==="; timeout 40 node "$f" --help 2>&1 | head -35; fi
+          done
+          true
+
+      - name: 起 Web
+        run: |
+          set -uo pipefail
+          cd /tmp/app
+          for f in dist/server-cli.js dist/server.js; do
+            if [ -f "$f" ]; then
+              echo "=== 尝试 $f ==="
+              node "$f" --port 3030 --no-open > /tmp/s.log 2>&1 &
+              P=$!
+              sleep 25
+              curl -sS -m 8 -o /tmp/i.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+              head -c 300 /tmp/i.html 2>/dev/null || true
+              echo
+              head -40 /tmp/s.log || true
+              kill $P 2>/dev/null || true
+            fi
+          done
+
+      - name: Web 静态资源
+        if: always()
+        run: |
+          find /tmp/app -maxdepth 2 -type d | head -40
+          echo "=== 找 index.html ==="
+          find /tmp/app -name 'index.html' | head -10
+          du -sh /tmp/app 2>/dev/null || true
