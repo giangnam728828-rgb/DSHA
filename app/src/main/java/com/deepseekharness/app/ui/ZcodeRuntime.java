@@ -16,46 +16,52 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * ZCode 运行时的安装与就绪检查。
+ * ZCode 运行时的安装、启动与就绪检查。
  *
- * <p>ZCode 桌面版的 Web 服务嵌在 Electron 的 host 进程里，依赖 IPC 启动，无法在纯 Node 下独立运行；
- * 官方也没有公开 arm64 的 CLI 发行包。因此这里只安装运行时（{@code /root/.zcode/glm}），
- * 由 DSHA 既有终端以 PTY 方式运行它的 TUI —— 功能完整、无 Electron、无虚拟显示。
+ * <p>用社区的独立发行版 {@code @ljwei-stak/zcode-cli}：它把官方 Electron 包里的 Agent 与
+ * Web 服务抽成纯 Node 发行版，{@code zcode --web} 直接监听本机端口，不需要 Electron，
+ * 也不需要虚拟显示。DSHA 的 WebPreviewActivity 指向该端口，就是与 DeepSeek 同形态的界面。
  *
- * <p>安装脚本来自 APK assets，在 guest 内执行；失败时原样返回输出，不吞错。
+ * <p>安装与启动脚本来自 APK assets，在 guest 内执行；失败时原样返回输出，不吞错。
  */
 final class ZcodeRuntime {
 
-  static final String HOME = "/root/.zcode";
+  static final String HOME = "/root/.zcode-cli";
+  static final int PORT = 3030;
   private static final String READY = HOME + "/.ready";
-  private static final String CLI = HOME + "/glm/zcode.cjs";
+  private static final String SERVER = HOME + "/package/runtime/server/entry-http.js";
 
   private ZcodeRuntime() {}
 
-  /** 成功返回 null；失败返回要展示给用户的原始输出。 */
-  static String ensureReady(Context ctx, Consumer<String> stage) {
+  /** 装好并把服务拉起来；成功返回 null，失败返回要展示给用户的原始输出。 */
+  static String prepare(Context ctx, Consumer<String> stage) {
     try {
-      if (exists(ctx, READY) && exists(ctx, CLI)) return null;
-      stage.accept(UiText.choose(
-          "首次使用，正在安装 ZCode 运行时（约 90MB）…",
-          "First run: installing ZCode runtime (~90MB)…"));
-      String out = exec(ctx, installCommand(ctx), TimeUnit.MINUTES.toMillis(40));
-      if (out.contains("INSTALL_OK") || out.contains("RUNTIME_READY")) {
-        if (exists(ctx, CLI)) return null;
-        return UiText.choose("安装完成但找不到 glm/zcode.cjs", "Installed but glm/zcode.cjs is missing");
+      if (!(exists(ctx, READY) && exists(ctx, SERVER))) {
+        stage.accept(UiText.choose(
+            "首次使用，正在安装 ZCode 运行时（约 85MB）…",
+            "First run: installing ZCode runtime (~85MB)…"));
+        String out = exec(ctx, script(ctx, "zcode-install.sh"), TimeUnit.MINUTES.toMillis(30));
+        if (!out.contains("RUNTIME_READY") && !out.contains("INSTALL_OK")) {
+          return out.isEmpty() ? UiText.choose("安装脚本没有输出", "Installer produced no output") : out;
+        }
       }
-      return out.isEmpty() ? UiText.choose("安装脚本没有输出", "Installer produced no output") : out;
+      stage.accept(UiText.choose("正在启动 ZCode…", "Starting ZCode…"));
+      String started = exec(ctx, script(ctx, "zcode-start.sh"), TimeUnit.MINUTES.toMillis(3));
+      if (started.contains("SERVER_READY") || started.contains("SERVER_ALREADY_RUNNING")) return null;
+      return started.isEmpty() ? UiText.choose("启动脚本没有输出", "Launcher produced no output") : started;
     } catch (Throwable error) {
       if (error instanceof InterruptedException) Thread.currentThread().interrupt();
       return String.valueOf(error);
     }
   }
 
-  private static String installCommand(Context ctx) throws IOException {
-    String script = readAsset(ctx, "zcode-install.sh");
-    String encoded = Base64.encodeToString(script.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
-    return "mkdir -p " + HOME + " && printf '%s' '" + encoded + "' | base64 -d > " + HOME
-        + "/install.sh && chmod +x " + HOME + "/install.sh && bash " + HOME + "/install.sh";
+  /** 把资产脚本写到 guest 再执行；每次覆盖，保证升级后跑的是新脚本。 */
+  private static String script(Context ctx, String name) throws IOException {
+    String body = readAsset(ctx, name);
+    String encoded = Base64.encodeToString(body.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+    String path = HOME + "/" + name;
+    return "mkdir -p " + HOME + " && printf '%s' '" + encoded + "' | base64 -d > " + path
+        + " && chmod +x " + path + " && bash " + path;
   }
 
   private static boolean exists(Context ctx, String path) {
