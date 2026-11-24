@@ -1,0 +1,69 @@
+name: zcode-runtime-probe5
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 准备
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          npm i -g @electron/asar > /dev/null 2>&1
+          cd /tmp/squashfs-root/resources
+          asar extract app.asar /tmp/app
+          mkdir -p glm/provider && cp config/provider/*.json glm/provider/ 2>/dev/null || true
+          echo ready
+
+      - name: 应用结构
+        run: |
+          set -uo pipefail
+          echo "=== package.json ==="; cat /tmp/app/package.json
+          echo "=== out 两层 ==="; find /tmp/app/out -maxdepth 2 | head -60
+
+      - name: 找 HTTP 服务
+        run: |
+          set -uo pipefail
+          echo "=== 含 createServer/listen 的文件 ==="
+          grep -rl 'createServer\|\.listen(' /tmp/app/out --include='*.js' 2>/dev/null | head -15
+          echo "=== out 里的 server/web 命名 ==="
+          find /tmp/app/out -type f \( -name '*server*' -o -name '*web*' -o -name '*host*' \) 2>/dev/null | head -30
+
+      - name: app-server 桌面面
+        run: |
+          set -uo pipefail
+          cd /tmp/squashfs-root/resources
+          echo "=== app-server --surface desktop ==="
+          timeout 12 node glm/zcode.cjs app-server --surface desktop < /dev/null > /tmp/as.log 2>&1 || true
+          head -30 /tmp/as.log
+          echo "=== app-server 默认 ==="
+          timeout 10 node glm/zcode.cjs app-server < /dev/null > /tmp/as2.log 2>&1 || true
+          head -20 /tmp/as2.log
+
+      - name: 用 Electron 跑 main（headless 探测）
+        run: |
+          set -uo pipefail
+          cd /tmp/app
+          MAIN=$(node -p "require('/tmp/app/package.json').main || ''")
+          echo "MAIN=$MAIN"
+          if [ -n "$MAIN" ]; then
+            timeout 20 /tmp/squashfs-root/zcode --no-sandbox --headless --disable-gpu "$MAIN" > /tmp/el.log 2>&1 || true
+            head -40 /tmp/el.log
+          fi
+
+      - name: 找 Web 前端静态资源
+        if: always()
+        run: |
+          find /tmp/app -maxdepth 3 -name 'index.html' | head -10
+          find /tmp/app -maxdepth 3 -type d -name 'web*' -o -maxdepth 3 -type d -name 'renderer*' | head -10
+          du -sh /tmp/app/out /tmp/app/node_modules 2>/dev/null
