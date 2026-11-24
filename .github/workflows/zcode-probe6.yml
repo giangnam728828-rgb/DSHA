@@ -1,0 +1,73 @@
+name: zcode-runtime-probe6
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 准备
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/z.AppImage "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          npm i -g @electron/asar > /dev/null 2>&1
+          cd /tmp/squashfs-root/resources
+          asar extract app.asar /tmp/app
+          mkdir -p glm/provider && cp config/provider/*.json glm/provider/ 2>/dev/null || true
+          echo ok
+
+      - name: host 入口信息
+        run: |
+          set -uo pipefail
+          echo "=== 头部 40 行 ==="
+          head -c 2000 /tmp/app/out/host/index.js
+          echo
+          echo "=== argv/env 引用 ==="
+          grep -oE '(process\.argv|process\.env)[^;)]{0,90}' /tmp/app/out/host/index.js | sort -u | head -30
+          echo "=== 监听调用 ==="
+          grep -oE '.{60}\.listen\(.{60}' /tmp/app/out/host/index.js | head -10
+
+      - name: 直接跑 host
+        run: |
+          set -uo pipefail
+          cd /tmp/app
+          node out/host/index.js --port 3030 > /tmp/h.log 2>&1 &
+          P=$!
+          sleep 18
+          echo "=== HTTP ==="
+          curl -sS -m 8 -o /tmp/h.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+          head -c 300 /tmp/h.html 2>/dev/null || true
+          echo
+          echo "=== 日志 ==="
+          head -50 /tmp/h.log || true
+          kill $P 2>/dev/null || true
+
+      - name: 环境变量探路
+        if: always()
+        run: |
+          set -uo pipefail
+          cd /tmp/app
+          for kv in "PORT=3030" "ZCODE_PORT=3030" "HOST=127.0.0.1"; do
+            echo "=== $kv ==="
+            env $kv node out/host/index.js > /tmp/h2.log 2>&1 &
+            P=$!
+            sleep 10
+            curl -sS -m 5 -o /dev/null -w "HTTP:%{http_code}\n" http://127.0.0.1:3030/ || true
+            kill $P 2>/dev/null || true
+            head -8 /tmp/h2.log || true
+          done
+
+      - name: 看 host 是否是 Electron utilityProcess
+        if: always()
+        run: |
+          grep -oE "utilityProcess|process\.parentPort|MessagePort|electron" /tmp/app/out/host/index.js | sort | uniq -c | head
+          echo "=== renderer 入口 ==="
+          head -c 400 /tmp/app/out/renderer/index.html
