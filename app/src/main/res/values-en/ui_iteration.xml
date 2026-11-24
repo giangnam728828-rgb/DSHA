@@ -146,4 +146,6 @@
     <string name="ui2_storage_files">Storage and files</string>
     <string name="ui2_storage_files_sub">Storage usage, cache cleanup and file sharing</string>
     <string name="ui2_recovery_tools">Environment and data recovery</string>
+    <string name="zcode_entry">ZCode desktop</string>
+    <string name="zcode_entry_hint">Runs alongside DeepSeek as a second workbench</string>
 </resources>
