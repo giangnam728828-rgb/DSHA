@@ -1,0 +1,108 @@
+name: zcode-runtime-probe
+
+# 一次性探针：验证 ZCode 桌面包能否脱离 Electron、用系统 Node 起 Web。
+# 只做侦察与最小启动试验，不产出发布物。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 环境
+        run: |
+          uname -a
+          nproc
+          free -h
+          df -h /
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载 ZCode 桌面包
+        run: |
+          set -euo pipefail
+          URL="https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          curl -fL --retry 3 --connect-timeout 20 -o /tmp/z.AppImage "$URL"
+          ls -lh /tmp/z.AppImage
+          sha256sum /tmp/z.AppImage
+
+      - name: 解包 AppImage
+        run: |
+          set -euo pipefail
+          chmod +x /tmp/z.AppImage
+          cd /tmp
+          /tmp/z.AppImage --appimage-extract >/dev/null
+          echo "=== squashfs-root ==="
+          ls -la /tmp/squashfs-root | head -30
+          echo "=== resources ==="
+          ls -la /tmp/squashfs-root/resources | head -60
+
+      - name: 解开 asar
+        run: |
+          set -euo pipefail
+          cd /tmp/squashfs-root/resources
+          ls -la
+          if [ -f app.asar ]; then
+            echo "=== asar 顶层 ==="
+            npx --yes @electron/asar list app.asar | awk -F/ 'NF<=3' | head -80
+            npx --yes @electron/asar extract app.asar /tmp/app
+            echo "=== 提取后的顶层 ==="
+            ls -la /tmp/app | head -40
+          fi
+
+      - name: 找服务端入口
+        run: |
+          set -uo pipefail
+          echo "=== 候选 server-cli ==="
+          find /tmp/app /tmp/squashfs-root/resources -maxdepth 6 -name 'server-cli*' 2>/dev/null | head -20
+          echo "=== 候选 main/bin ==="
+          find /tmp/app -maxdepth 4 \( -name 'main.js' -o -name 'index.js' -o -path '*/bin/*' \) 2>/dev/null | head -40
+          echo "=== app/package.json ==="
+          head -60 /tmp/app/package.json 2>/dev/null || true
+          echo "=== unpacked 原生模块 ==="
+          find /tmp/squashfs-root/resources -maxdepth 4 -name '*.node' 2>/dev/null | head -20
+          echo "=== resources 子目录 ==="
+          find /tmp/squashfs-root/resources -maxdepth 2 -type d 2>/dev/null | head -40
+
+      - name: 用系统 Node 起 Web（候选 1: --web）
+        run: |
+          set -uo pipefail
+          ENTRY=$(find /tmp/app -maxdepth 6 -name 'server-cli.js' | head -1)
+          echo "ENTRY=$ENTRY"
+          if [ -z "$ENTRY" ]; then echo "未找到 server-cli.js，跳过"; exit 0; fi
+          cd "$(dirname "$ENTRY")/.."
+          node "$ENTRY" --web --port 3030 --no-open > /tmp/zcode.log 2>&1 &
+          echo $! > /tmp/zcode.pid
+          sleep 25
+          echo "=== HTTP 探测 ==="
+          curl -sS -m 10 -o /tmp/index.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+          echo "=== 首屏片段 ==="
+          head -c 400 /tmp/index.html 2>/dev/null || true
+          echo
+          echo "=== 日志（前 80 行）==="
+          head -80 /tmp/zcode.log || true
+
+      - name: 用系统 Node 起 Web（候选 2: 无参数）
+        if: always()
+        run: |
+          set -uo pipefail
+          [ -f /tmp/zcode.pid ] && kill "$(cat /tmp/zcode.pid)" 2>/dev/null || true
+          ENTRY=$(find /tmp/app -maxdepth 6 -name 'server-cli.js' | head -1)
+          if [ -z "$ENTRY" ]; then echo "无入口，跳过"; exit 0; fi
+          cd "$(dirname "$ENTRY")/.."
+          node "$ENTRY" --port 3031 --no-open > /tmp/zcode2.log 2>&1 &
+          echo $! > /tmp/zcode2.pid
+          sleep 25
+          curl -sS -m 10 -o /tmp/index2.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3031/ || true
+          head -80 /tmp/zcode2.log || true
+
+      - name: 清理
+        if: always()
+        run: |
+          [ -f /tmp/zcode.pid ] && kill "$(cat /tmp/zcode.pid)" 2>/dev/null || true
+          [ -f /tmp/zcode2.pid ] && kill "$(cat /tmp/zcode2.pid)" 2>/dev/null || true
+          echo done
