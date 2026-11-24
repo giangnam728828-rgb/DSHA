@@ -146,7 +146,8 @@
     "web-integration/session-interaction.js",
     "welcome-notice-patch.json",
     "workspace-directory-policy-patch.json",
-    "zcode-install.sh"
+    "zcode-install.sh",
+    "zcode-start.sh"
   ],
   "packagedTrees": [
     "app-integration",
@@ -307,9 +308,10 @@
     {
       "source": "app/src/main/java/com/deepseekharness/app/ui/ZcodeRuntime.java",
       "method": "readAsset",
-      "contract": "ZCode guest installer is read from the APK and executed inside the Ubuntu guest; it is not a managed runtime input.",
+      "contract": "ZCode guest runtime scripts are read from the APK and executed inside the Ubuntu guest; they are not managed runtime inputs.",
       "assets": [
-        "zcode-install.sh"
+        "zcode-install.sh",
+        "zcode-start.sh"
       ]
     }
   ],
