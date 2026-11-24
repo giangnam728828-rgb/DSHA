@@ -68,7 +68,7 @@ jobs:
           echo "=== resources 子目录 ==="
           find /tmp/squashfs-root/resources -maxdepth 2 -type d 2>/dev/null | head -40
 
-      - name: 用系统 Node 起 Web（候选 1: --web）
+      - name: "用系统 Node 起 Web 候选一 web 参数"
         run: |
           set -uo pipefail
           ENTRY=$(find /tmp/app -maxdepth 6 -name 'server-cli.js' | head -1)
@@ -86,7 +86,7 @@ jobs:
           echo "=== 日志（前 80 行）==="
           head -80 /tmp/zcode.log || true
 
-      - name: 用系统 Node 起 Web（候选 2: 无参数）
+      - name: "用系统 Node 起 Web 候选二 无参数"
         if: always()
         run: |
           set -uo pipefail
