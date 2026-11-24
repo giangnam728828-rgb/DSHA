@@ -206,6 +206,14 @@
             android:exported="false"
             android:theme="@style/Theme.DeepseekHarness" />
 
+        <!-- ZCode 第二工作台：独立任务承载准备页，就绪后切到 WebPreviewActivity。 -->
+        <activity
+            android:name=".ui.ZcodeActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
+            android:theme="@style/Theme.DeepseekHarness" />
+
         <activity
             android:name=".ui.AdbPairActivity"
             android:exported="false"
