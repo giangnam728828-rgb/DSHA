@@ -1,0 +1,71 @@
+name: zcode-runtime-probe7
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 下载 4.0.0
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o /tmp/z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/4.0.0/linux-x64/ZCode-4.0.0-linux-x64.AppImage"
+          chmod +x /tmp/z.AppImage
+          cd /tmp && /tmp/z.AppImage --appimage-extract > /dev/null
+          echo "=== resources ==="; ls -la /tmp/squashfs-root/resources
+          du -sh /tmp/squashfs-root/resources/glm 2>/dev/null || true
+
+      - name: glm 入口与帮助
+        run: |
+          set -uo pipefail
+          R=/tmp/squashfs-root/resources
+          echo "=== meta ==="; cat "$R/glm/.node-bundle-meta.json" 2>/dev/null
+          mkdir -p "$R/glm/provider" && cp "$R/config/provider/"*.json "$R/glm/provider/" 2>/dev/null || true
+          cd "$R"
+          echo "=== version ==="; timeout 30 node glm/zcode.cjs version 2>&1 | head -5
+          echo "=== help 里找 web ==="; timeout 40 node glm/zcode.cjs --help 2>&1 | grep -iE 'web|port|host|serve' | head -20
+
+      - name: 起 Web
+        run: |
+          set -uo pipefail
+          R=/tmp/squashfs-root/resources
+          cd "$R"
+          node glm/zcode.cjs --web --port 3030 --no-open > /tmp/w.log 2>&1 &
+          echo $! > /tmp/w.pid
+          sleep 30
+          echo "=== HTTP ==="
+          curl -sS -m 10 -o /tmp/w.html -w "HTTP:%{http_code} bytes:%{size_download}\n" http://127.0.0.1:3030/ || true
+          echo "=== title ==="; grep -oE '<title>[^<]*</title>' /tmp/w.html 2>/dev/null | head -3
+          echo "=== 日志 ==="; head -60 /tmp/w.log 2>/dev/null || true
+
+      - name: 备用参数
+        if: always()
+        run: |
+          set -uo pipefail
+          [ -f /tmp/w.pid ] && kill "$(cat /tmp/w.pid)" 2>/dev/null || true
+          R=/tmp/squashfs-root/resources
+          cd "$R"
+          for a in "--web --port 3031" "web --port 3032" "serve --port 3033"; do
+            echo "=== [$a] ==="
+            node glm/zcode.cjs $a --no-open > /tmp/x.log 2>&1 &
+            P=$!
+            sleep 15
+            curl -sS -m 5 -o /dev/null -w "HTTP:%{http_code}\n" "http://127.0.0.1:$(echo $a | grep -oE '[0-9]{4}')/" || true
+            kill $P 2>/dev/null || true
+            head -10 /tmp/x.log || true
+          done
+
+      - name: 包体构成
+        if: always()
+        run: |
+          R=/tmp/squashfs-root/resources
+          du -sh "$R"/* 2>/dev/null | sort -h | tail -10
+          echo "=== glm 顶层 ==="; ls -la "$R/glm" 2>/dev/null | head -15
+          echo "=== 找 web 静态 ==="; find "$R" -maxdepth 3 -name 'index.html' 2>/dev/null | head -5
