@@ -1,0 +1,79 @@
+name: "zcode probe8 host stub web"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: "下载 3.15.1 x64 AppImage"
+        run: |
+          mkdir -p /tmp/z && cd /tmp/z
+          curl -fL --retry 3 -o z.AppImage \
+            "https://cdn-zcode.z.ai/zcode/electron/releases/3.15.1/linux-x64/ZCode-3.15.1-linux-x64.AppImage"
+          ls -lh z.AppImage
+          chmod +x z.AppImage
+          ./z.AppImage --appimage-extract >/dev/null 2>&1
+          ls squashfs-root/resources
+
+      - name: "解 asar"
+        run: |
+          cd /tmp/z
+          npm i -g @electron/asar >/dev/null 2>&1 || true
+          asar extract squashfs-root/resources/app.asar app || npx --yes @electron/asar extract squashfs-root/resources/app.asar app
+          echo "=== app 根 ==="; ls app | head -20
+          echo "=== package.json ==="; head -40 app/package.json
+          echo "=== out 结构 ==="; find app/out -maxdepth 2 -type d 2>/dev/null | head -20
+
+      - name: "找 host 与 renderer"
+        run: |
+          cd /tmp/z
+          echo "=== host 入口 ==="; ls -la app/out/host 2>/dev/null
+          echo "=== renderer 静态 ==="; find app/out/renderer -maxdepth 1 -name "*.html" 2>/dev/null | head
+          echo "=== host 头部 ==="; head -c 600 app/out/host/index.js 2>/dev/null; echo
+          echo "=== parentPort 出现次数 ==="; grep -o "parentPort" app/out/host/index.js 2>/dev/null | wc -l
+          echo "=== listen 上下文 ==="; grep -o ".\{120\}\.listen(.\{120\}" app/out/host/index.js 2>/dev/null | head -5
+          echo "=== 是否存在 http server ==="; grep -o "createServer\|WebSocketServer\|http\.Server" app/out/host/index.js 2>/dev/null | sort | uniq -c
+
+      - name: "带 parentPort 桩启动 host"
+        run: |
+          cd /tmp/z
+          cat > stub.cjs <<'EOF'
+          const { EventEmitter } = require('events');
+          if (!process.parentPort) {
+            const port = new EventEmitter();
+            port.postMessage = (m) => { try { console.log('[parentPort.postMessage]', JSON.stringify(m).slice(0, 200)); } catch (_) {} };
+            port.start = () => {};
+            port.close = () => {};
+            process.parentPort = port;
+          }
+          process.on('uncaughtException', (e) => { console.log('[uncaught]', e && e.message); });
+          process.on('unhandledRejection', (e) => { console.log('[reject]', e && e.message); });
+          EOF
+          echo "=== 启动 ==="
+          timeout 60 node -r ./stub.cjs app/out/host/index.js > host.log 2>&1 &
+          HPID=$!
+          sleep 25
+          echo "=== 端口 ==="; (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | head -15
+          echo "=== host.log ==="; tail -40 host.log
+          for p in 3030 6173 7788 3000 5173 8080; do
+            code=$(curl -s -o /tmp/r.html -w "%{http_code}" --max-time 4 "http://127.0.0.1:$p/" 2>/dev/null)
+            echo "port $p -> $code $(wc -c < /tmp/r.html 2>/dev/null)"
+            if [ "$code" = "200" ]; then echo "--- 头部 ---"; head -c 400 /tmp/r.html; echo; fi
+          done
+          kill $HPID 2>/dev/null || true
+
+      - name: "尝试 electron 无头"
+        run: |
+          cd /tmp/z
+          ls squashfs-root | head -20
+          echo "=== 直接跑主进程看缺什么 ==="
+          timeout 25 squashfs-root/zcode --no-sandbox --disable-gpu > el.log 2>&1 || true
+          tail -25 el.log
